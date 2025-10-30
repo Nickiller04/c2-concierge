@@ -37,7 +37,7 @@
 - **Uptime**: 99.9% target (external monitoring defined but activated later)
 
 ### Auto-Fallback (Defined Now, Enforced in Phase 6)
-If embed survival for any tenant drops below threshold for 15 minutes:
+If embed survival for any tenant drops below threshold for 10 minutes:
 - Automatically flip tenant to remote-only mode
 - Require badge verification for all assets
 - Log the transition with audit trail
@@ -62,6 +62,9 @@ If embed survival for any tenant drops below threshold for 15 minutes:
 - Break-glass protocol violation → security incident
 
 ## Compliance & Legal
+
+### Hard Rule: Feature Acceptance Tests
+**MANDATORY**: Every new feature MUST include acceptance tests in the hostile-path matrix before merge. See [Feature Policy](feature-policy.md) for complete requirements.
 
 ### Prohibited Uses
 - Claims designed to mislead (e.g., asserting editorial facts inside technical assertions)

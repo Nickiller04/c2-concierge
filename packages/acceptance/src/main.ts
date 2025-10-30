@@ -8,6 +8,7 @@ import { SandboxManager } from './sandboxes.js';
 import { runScenario } from './runScenario.js';
 import { generateSurvivalReport } from './reporters/json.js';
 import { generateJunitReport } from './reporters/junit.js';
+import { generateCsvReport, generateSummaryReport } from './reporters/csv.js';
 
 interface Options {
   matrix: string;
@@ -75,7 +76,7 @@ async function main(): Promise<void> {
       
       if (options.verbose) {
         const status = result.remote_survives ? 'PASS' : 'FAIL';
-        console.log(`  ${status}: ${result.scenario_id} (remote: ${result.remote_survives}, embed: ${result.embed_survives})`);
+        console.log(`  ${status}: ${result.scenario_id} (remote: ${result.remote_survives}, embed: ${result.embed_survives}, code: ${result.failure_code})`);
       }
     }
 
@@ -95,6 +96,10 @@ async function main(): Promise<void> {
       join(options.out, 'junit.xml')
     );
 
+    // Generate deterministic text/CSV artifacts
+    generateCsvReport(survivalReport, options.out);
+    generateSummaryReport(survivalReport, options.out);
+
     // Print summary
     console.log('\n=== Acceptance Test Summary ===');
     console.log(`Run ID: ${survivalReport.run_id}`);
@@ -103,17 +108,29 @@ async function main(): Promise<void> {
     console.log(`Embed Survival Rate (Preserve): ${(survivalReport.embed_survival_rate_preserve_only * 100).toFixed(2)}%`);
     console.log(`Failed Scenarios: ${survivalReport.scenarios_failed}`);
     
+    console.log('\n=== Failure Breakdown ===');
+    for (const [code, count] of Object.entries(survivalReport.failure_breakdown)) {
+      if (count > 0) {
+        console.log(`${code}: ${count}`);
+      }
+    }
+    
     if (survivalReport.scenarios_failed > 0) {
       console.log('\nFailed Scenarios:');
       results
         .filter(r => !r.remote_survives)
         .forEach(r => {
-          console.log(`  - ${r.scenario_id} (${r.sandbox})`);
+          console.log(`  - ${r.scenario_id} (${r.sandbox}) - ${r.failure_code}`);
           if (r.error) {
             console.log(`    Error: ${r.error}`);
           }
         });
     }
+
+    console.log('\n=== Deterministic Artifacts Generated ===');
+    console.log('✅ survival.json (machine-readable)');
+    console.log('✅ survival-results.csv (deterministic CSV)');
+    console.log('✅ survival-summary.txt (human-readable)');
 
     // Exit with error code if remote survival below threshold
     if (survivalReport.remote_survival_rate < 0.999) {

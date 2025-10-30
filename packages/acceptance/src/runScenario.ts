@@ -1,9 +1,39 @@
-import { Scenario, ScenarioResult } from './types.js';
+import { Scenario, ScenarioResult, FailureCode, FAILURE_TAXONOMY } from './types.js';
 import { applyTransforms } from './transforms/index.js';
 import { probeHeaders } from './probes/headersProbe.js';
 import { probeLinkResolution } from './probes/linkResolutionProbe.js';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
+
+function determineFailureCode(
+  remote_survives: boolean,
+  embed_survives: boolean,
+  manifest_status: number,
+  hash_alignment: boolean,
+  has_link_header: boolean,
+  error?: string
+): FailureCode {
+  if (error) {
+    if (error.includes('timeout')) return 'INACCESSIBLE_TIMEOUT';
+    if (error.includes('ECONNREFUSED')) return 'INACCESSIBLE';
+    if (error.includes('404')) return 'INACCESSIBLE_404';
+  }
+  
+  if (!remote_survives) {
+    if (manifest_status !== 200) {
+      return manifest_status === 404 ? 'INACCESSIBLE_404' : 'BROKEN_MANIFEST';
+    }
+    if (!hash_alignment) return 'BROKEN_MANIFEST';
+    if (!has_link_header) return 'BROKEN_LINK';
+    return 'BROKEN_HEADERS';
+  }
+  
+  if (!embed_survives) {
+    return 'DESTROYED_EMBED';
+  }
+  
+  return 'SURVIVED';
+}
 
 export async function runScenario(
   scenario: Scenario,
@@ -52,11 +82,22 @@ export async function runScenario(
                           scenario.expected.embed_survives !== false &&
                           headersResult.x_c2_policy !== 'remote-only';
 
+    const has_link_header = !!(headersResult.headers.link || '').includes('c2pa-manifest');
+    const failure_code = determineFailureCode(
+      remote_survives,
+      embed_survives,
+      linkResult.manifest_fetch_status,
+      linkResult.hash_alignment,
+      has_link_header
+    );
+
     const result: ScenarioResult = {
       scenario_id: scenario.id,
       sandbox: scenario.sandbox,
       remote_survives,
       embed_survives,
+      failure_code,
+      failure_taxonomy: FAILURE_TAXONOMY[failure_code],
       headers_snapshot: headersResult.headers,
       manifest_fetch: {
         status: linkResult.manifest_fetch_status,
@@ -76,17 +117,23 @@ export async function runScenario(
     writeFileSync(join(scenarioDir, 'verdict.json'), JSON.stringify({
       remote_survives,
       embed_survives,
+      failure_code,
+      failure_taxonomy: result.failure_taxonomy,
       expected: scenario.expected
     }, null, 2));
     writeFileSync(join(scenarioDir, 'timings.json'), JSON.stringify(result.timings_ms, null, 2));
 
     return result;
   } catch (error) {
+    const failure_code = determineFailureCode(false, false, -1, false, false, error instanceof Error ? error.message : String(error));
+    
     const result: ScenarioResult = {
       scenario_id: scenario.id,
       sandbox: scenario.sandbox,
       remote_survives: false,
       embed_survives: false,
+      failure_code,
+      failure_taxonomy: FAILURE_TAXONOMY[failure_code],
       headers_snapshot: {},
       manifest_fetch: {
         status: -1,
@@ -101,7 +148,7 @@ export async function runScenario(
       error: error instanceof Error ? error.message : String(error)
     };
 
-    writeFileSync(join(scenarioDir, 'error.json'), JSON.stringify({ error: result.error }, null, 2));
+    writeFileSync(join(scenarioDir, 'error.json'), JSON.stringify({ error: result.error, failure_code }, null, 2));
     return result;
   }
 }

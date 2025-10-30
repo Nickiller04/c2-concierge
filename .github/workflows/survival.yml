@@ -1,4 +1,4 @@
-name: Survival
+name: survival:baseline
 
 on:
   push:
@@ -27,13 +27,11 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
       
-      - name: Install ImageMagick
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y imagemagick
-      
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          sudo apt-get install -y imagemagick curl
+          pnpm install --frozen-lockfile
       
       - name: Build all packages
         run: pnpm build
@@ -46,16 +44,14 @@ jobs:
       - name: Start sandboxes
         run: |
           chmod +x scripts/run-sandboxes.sh
-          ./scripts/run-sandboxes.sh &
-          echo "SANDBOX_PID=$!" >> $GITHUB_ENV
-      
-      - name: Wait for sandboxes
-        run: |
-          echo "⏳ Waiting for sandboxes to be ready..."
+          ./scripts/run-sandboxes.sh
+          echo "Waiting for sandboxes to be ready..."
           for port in 4101 4102 4103; do
+            echo "Checking port $port..."
             timeout 60 bash -c "until curl -f http://127.0.0.1:$port/health; do sleep 2; done"
             echo "✅ Sandbox on port $port is ready"
           done
+          echo "SANDBOX_PID=$!" >> $GITHUB_ENV
       
       - name: Run acceptance tests
         run: |

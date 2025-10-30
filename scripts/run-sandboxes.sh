@@ -95,12 +95,12 @@ mkdir -p "$PROJECT_ROOT/.artifacts/logs"
 echo "🧹 Cleaning up existing sandboxes..."
 for sandbox in strip-happy preserve-embed remote-only; do
     if [[ -f "$PROJECT_ROOT/.artifacts/logs/${sandbox}.pid" ]]; then
-        local pid=$(cat "$PROJECT_ROOT/.artifacts/logs/${sandbox}.pid")
-        if kill -0 $pid 2>/dev/null; then
-            echo "🛑 Stopping existing $sandbox (PID $pid)..."
-            kill $pid
+        local_pid=$(cat "$PROJECT_ROOT/.artifacts/logs/${sandbox}.pid")
+        if kill -0 $local_pid 2>/dev/null; then
+            echo "🛑 Stopping existing $sandbox (PID $local_pid)..."
+            kill $local_pid
             sleep 2
-            kill -9 $pid 2>/dev/null || true
+            kill -9 $local_pid 2>/dev/null || true
         fi
         rm -f "$PROJECT_ROOT/.artifacts/logs/${sandbox}.pid"
     fi

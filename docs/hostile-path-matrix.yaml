@@ -74,6 +74,36 @@ scenarios:
       embed_survives: false
       notes: "Metadata rewrite breaks embedded signatures"
 
+  - id: IMG_ROTATE_90
+    sandbox: strip-happy
+    transforms:
+      - tool: "magick"
+        args: ["-rotate", "90"]
+    expected:
+      remote_survives: true
+      embed_survives: false
+      notes: "Rotation strips embedded claims due to pixel rearrangement"
+
+  - id: IMG_WATERMARK_OVERLAY
+    sandbox: strip-happy
+    transforms:
+      - tool: "magick"
+        args: ["-gravity", "southeast", "-pointsize", "24", "-fill", "white", "-undercolor", "black", "-annotate", "+10+10", "WATERMARK"]
+    expected:
+      remote_survives: true
+      embed_survives: false
+      notes: "Watermark overlay destroys embedded provenance"
+
+  - id: IMG_THUMBNAIL_150X150
+    sandbox: strip-happy
+    transforms:
+      - tool: "magick"
+        args: ["-thumbnail", "150x150"]
+    expected:
+      remote_survives: true
+      embed_survives: false
+      notes: "Thumbnail generation strips all metadata and embedded claims"
+
   - id: CDN_RECOMPRESS_Q80
     sandbox: strip-happy
     transforms:

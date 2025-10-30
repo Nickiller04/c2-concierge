@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import express from 'express';
-import sharp from 'sharp';
-import cors from 'cors';
-import { createServer } from 'http';
+const express = require('express');
+const sharp = require('sharp');
+const cors = require('cors');
+const http = require('http');
 
 const PORT = process.env.PORT || 4102;
 const app = express();
@@ -22,7 +22,7 @@ app.get('/assets/:filename', async (req, res) => {
     const { filename } = req.params;
     
     // Create a test image that preserves metadata (simulating embedded C2PA)
-    let imageBuffer: Buffer;
+    let imageBuffer;
     
     // For Phase 0, create an image with metadata that would preserve embeds
     imageBuffer = await sharp({
@@ -125,7 +125,7 @@ app.get('/assets-with-fallback/:filename', async (req, res) => {
   }
 });
 
-const server = createServer(app);
+const server = http.createServer(app);
 server.listen(PORT, () => {
   console.log(`Preserve-embed sandbox running on port ${PORT}`);
   console.log(`Health check: http://127.0.0.1:${PORT}/health`);

@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Artifacts and logs
+.artifacts/
+logs/
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Test coverage
+coverage/
+.nyc_output/
+lcov.info
+
+# Package manager lock files (keep pnpm-lock.yaml)
+package-lock.json
+yarn.lock
+
+# Runtime files
+*.pid
+*.seed
+
+# Fixture generation outputs
+fixtures/signed/*.jpg
+fixtures/manifests/*.c2pa
+fixtures/mapping.csv
+
+# Cloudflare
+.wrangler/
+
+# Image processing temporary files
+*.magick
+*.tmp.png
+*.tmp.jpg

@@ -1,0 +1,175 @@
+name: Survival
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    # Run daily at 14:00 UTC (10:00 EST)
+    - cron: '0 14 * * *'
+
+jobs:
+  matrix-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      
+      - name: Install ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build all packages
+        run: pnpm build
+      
+      - name: Create fixtures
+        run: |
+          chmod +x scripts/make-fixtures.sh
+          ./scripts/make-fixtures.sh
+      
+      - name: Start sandboxes
+        run: |
+          chmod +x scripts/run-sandboxes.sh
+          ./scripts/run-sandboxes.sh &
+          echo "SANDBOX_PID=$!" >> $GITHUB_ENV
+      
+      - name: Wait for sandboxes
+        run: |
+          echo "⏳ Waiting for sandboxes to be ready..."
+          for port in 4101 4102 4103; do
+            timeout 60 bash -c "until curl -f http://127.0.0.1:$port/health; do sleep 2; done"
+            echo "✅ Sandbox on port $port is ready"
+          done
+      
+      - name: Run acceptance tests
+        run: |
+          mkdir -p .artifacts/acceptance
+          pnpm -w test:acceptance
+      
+      - name: Generate HTML report
+        run: |
+          chmod +x scripts/report.sh
+          ./scripts/report.sh
+      
+      - name: Stop sandboxes
+        run: |
+          chmod +x scripts/stop-sandboxes.sh
+          ./scripts/stop-sandboxes.sh
+          if [ -n "${SANDBOX_PID:-}" ]; then
+            kill $SANDBOX_PID 2>/dev/null || true
+          fi
+      
+      - name: Validate survival thresholds
+        run: |
+          echo "🔍 Validating survival thresholds..."
+          
+          if command -v jq >/dev/null 2>&1; then
+            REMOTE_RATE=$(jq -r '.remote_survival_rate' .artifacts/acceptance/survival.json)
+            EMBED_RATE=$(jq -r '.embed_survival_rate_preserve_only' .artifacts/acceptance/survival.json)
+            FAILED_SCENARIOS=$(jq -r '.scenarios_failed' .artifacts/acceptance/survival.json)
+            
+            echo "📊 Results:"
+            echo "   Remote Survival: $(echo "$REMOTE_RATE * 100" | bc -l | cut -d. -f1)%"
+            echo "   Embed Survival: $(echo "$EMBED_RATE * 100" | bc -l | cut -d. -f1)%"
+            echo "   Failed Scenarios: $FAILED_SCENARIOS"
+            
+            # Hard gate: remote survival must be ≥ 99.9%
+            REMOTE_THRESHOLD=0.999
+            if (( $(echo "$REMOTE_RATE < $REMOTE_THRESHOLD" | bc -l) )); then
+              echo "❌ REMOTE SURVIVAL BELOW THRESHOLD: ${REMOTE_RATE} < ${REMOTE_THRESHOLD}"
+              echo "🚨 Phase 0 gate failed - cannot proceed to next phase"
+              exit 1
+            fi
+            
+            # Warning: embed survival should be ≥ 95% (non-blocking)
+            EMBED_THRESHOLD=0.95
+            if (( $(echo "$EMBED_RATE < $EMBED_THRESHOLD" | bc -l) )); then
+              echo "⚠️  EMBED SURVIVAL BELOW TARGET: ${EMBED_RATE} < ${EMBED_THRESHOLD}"
+              echo "💡 This is advisory for Phase 0 but will be enforced in later phases"
+            fi
+            
+            # No remote failures allowed
+            if [ "$FAILED_SCENARIOS" -gt 0 ]; then
+              echo "❌ REMOTE FAILURES DETECTED: $FAILED_SCENARIOS scenarios failed"
+              echo "🚨 Phase 0 gate failed - all remote scenarios must pass"
+              exit 1
+            fi
+            
+            echo "✅ All Phase 0 survival criteria met!"
+          else
+            echo "⚠️  jq not available - skipping threshold validation"
+          fi
+      
+      - name: Upload survival artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: survival-artifacts
+          path: |
+            .artifacts/acceptance/survival.json
+            .artifacts/acceptance/report.html
+            .artifacts/logs/*.ndjson
+            .artifacts/logs/*.log
+          retention-days: 30
+      
+      - name: Upload to GitHub Pages (if on main)
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./.artifacts/acceptance
+          destination_dir: survival-reports/${{ github.run_number }}
+      
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            try {
+              const report = JSON.parse(fs.readFileSync('.artifacts/acceptance/survival.json', 'utf8'));
+              
+              const comment = `
+              ## 🧪 C2 Concierge Survival Test Results
+              
+              **Run ID**: ${report.run_id}
+              **Timestamp**: ${new Date(report.timestamp).toLocaleString()}
+              
+              ### 📊 Metrics
+              - **Remote Survival**: ${(report.remote_survival_rate * 100).toFixed(2)}%
+              - **Embed Survival**: ${(report.embed_survival_rate_preserve_only * 100).toFixed(1)}%
+              - **Failed Scenarios**: ${report.scenarios_failed}/${report.total_scenarios}
+              
+              ### 🎯 Status
+              ${report.remote_survival_rate >= 0.999 && report.scenarios_failed === 0 ? '✅ **PASS** - Phase 0 criteria met' : '❌ **FAIL** - Phase 0 gate not passed'}
+              
+              ### 📋 View Details
+              - [HTML Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+              - [Raw JSON](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+              `;
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            } catch (error) {
+              console.error('Failed to read survival report:', error);
+            }

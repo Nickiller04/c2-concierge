@@ -1,0 +1,34 @@
+name = "c2-edge-worker"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+REMOTE_ONLY = "1"
+PRESERVE_PATHS = "/media/preserve/"
+MANIFEST_BASE = "https://manifests.survival.test"
+
+# KV namespace for break-glass protocol
+[[kv_namespaces]]
+binding = "BREAK_GLASS_KV"
+id = "break-glass-kv"
+preview_id = "break-glass-kv-preview"
+
+# Local development routes
+[[routes]]
+pattern = "http://127.0.0.1:4101/*"
+zone_name = "localhost"
+
+[[routes]]
+pattern = "http://127.0.0.1:4102/*"
+zone_name = "localhost"
+
+[[routes]]
+pattern = "http://127.0.0.1:4103/*"
+zone_name = "localhost"
+
+[env.development]
+vars = { REMOTE_ONLY = "0" }
+
+[env.production]
+vars = { REMOTE_ONLY = "1" }

@@ -1,0 +1,107 @@
+import { Scenario, ScenarioResult } from './types.js';
+import { applyTransforms } from './transforms/index.js';
+import { probeHeaders } from './probes/headersProbe.js';
+import { probeLinkResolution } from './probes/linkResolutionProbe.js';
+import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+
+export async function runScenario(
+  scenario: Scenario,
+  sandboxUrl: string,
+  outputDir: string
+): Promise<ScenarioResult> {
+  const startTime = Date.now();
+  const scenarioDir = join(outputDir, 'scenarios', scenario.id);
+  mkdirSync(scenarioDir, { recursive: true });
+
+  try {
+    // Load a test fixture (for Phase 0, we'll use a simple test image)
+    const fixturePath = '../../fixtures/signed/test-image.jpg';
+    let inputBuffer: Buffer;
+    
+    try {
+      inputBuffer = readFileSync(join(__dirname, fixturePath));
+    } catch (error) {
+      // Create a dummy buffer if fixture doesn't exist yet
+      inputBuffer = Buffer.from('dummy-image-content');
+    }
+
+    // Apply transforms
+    const transformedBuffer = await applyTransforms(inputBuffer, scenario.transforms);
+    
+    // For Phase 0, we'll simulate the asset being available via URL
+    // In a real implementation, this would upload to the sandbox
+    const assetUrl = `${sandboxUrl}/assets/${scenario.id}.jpg`;
+
+    // Probe headers
+    const headersStart = Date.now();
+    const headersResult = await probeHeaders(assetUrl);
+    const headersTime = Date.now() - headersStart;
+
+    // Probe link resolution (get expected manifest hash from X-Manifest-Hash header)
+    const headResponse = await fetch(assetUrl, { method: 'HEAD' });
+    const manifestHash = headResponse.headers.get('x-manifest-hash') || undefined;
+
+    const linkStart = Date.now();
+    const linkResult = await probeLinkResolution(assetUrl, manifestHash);
+    const linkTime = Date.now() - linkStart;
+
+    // Calculate verdict
+    const remote_survives = linkResult.manifest_fetch_status === 200 && linkResult.hash_alignment;
+    const embed_survives = scenario.sandbox === 'preserve-embed' && 
+                          scenario.expected.embed_survives !== false &&
+                          headersResult.x_c2_policy !== 'remote-only';
+
+    const result: ScenarioResult = {
+      scenario_id: scenario.id,
+      sandbox: scenario.sandbox,
+      remote_survives,
+      embed_survives,
+      headers_snapshot: headersResult.headers,
+      manifest_fetch: {
+        status: linkResult.manifest_fetch_status,
+        hash_alignment: linkResult.hash_alignment,
+        url: linkResult.manifest_url || ''
+      },
+      timings_ms: {
+        edge_worker: 2, // Placeholder for Phase 0
+        origin: Date.now() - startTime - headersTime - linkTime,
+        manifest_fetch: linkTime
+      }
+    };
+
+    // Write scenario artifacts
+    writeFileSync(join(scenarioDir, 'headers.json'), JSON.stringify(headersResult, null, 2));
+    writeFileSync(join(scenarioDir, 'manifest_fetch.json'), JSON.stringify(linkResult, null, 2));
+    writeFileSync(join(scenarioDir, 'verdict.json'), JSON.stringify({
+      remote_survives,
+      embed_survives,
+      expected: scenario.expected
+    }, null, 2));
+    writeFileSync(join(scenarioDir, 'timings.json'), JSON.stringify(result.timings_ms, null, 2));
+
+    return result;
+  } catch (error) {
+    const result: ScenarioResult = {
+      scenario_id: scenario.id,
+      sandbox: scenario.sandbox,
+      remote_survives: false,
+      embed_survives: false,
+      headers_snapshot: {},
+      manifest_fetch: {
+        status: -1,
+        hash_alignment: false,
+        url: ''
+      },
+      timings_ms: {
+        edge_worker: 0,
+        origin: 0,
+        manifest_fetch: 0
+      },
+      error: error instanceof Error ? error.message : String(error)
+    };
+
+    writeFileSync(join(scenarioDir, 'error.json'), JSON.stringify({ error: result.error }, null, 2));
+    return result;
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "c2-concierge",
+  "version": "0.1.0",
+  "description": "C2 Concierge: Provenance verification platform with remote-first survival doctrine",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r dev",
+    "test": "pnpm -r test",
+    "test:acceptance": "node packages/acceptance/bin/acceptance --matrix docs/hostile-path-matrix.yaml --out .artifacts/acceptance",
+    "lint": "eslint . --ext .ts,.js,.tsx,.jsx",
+    "typecheck": "tsc --noEmit",
+    "clean": "pnpm -r clean && rm -rf .artifacts",
+    "bootstrap": "pnpm install && pnpm -r build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
